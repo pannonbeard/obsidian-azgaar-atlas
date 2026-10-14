@@ -16,6 +16,7 @@ function bootAtlas() {
       const host=document.createElement("div");container.append(host);
       const dispose=Viewer.mount(host,data,{
         readOnly:true,
+        setReliefZoom:settings=>{data.viewSettings={...data.viewSettings,reliefMinZoom:settings};},
         setSettlements:show=>{data.viewSettings={...data.viewSettings,showSettlements:show};},
         open:point=>{
           const link=data.links[point.id];

@@ -19,40 +19,55 @@ function reliefKey(icon,set){
   }
   return null;
 }
-function restoreRelief(svg,data){
-  if(!data.relief?.icons.length || data.relief.enabled===false)return {drawn:0,missing:0};
+const reliefTools=typeof ReliefView==="undefined" ? require("./relief-view.js") : ReliefView;
+function createReliefRenderer(svg,data){
+  const empty={types:[],update:()=>({drawn:0,missing:0})};
+  if(!data.relief?.icons.length || data.relief.enabled===false)return empty;
   let layer=svg.querySelector("#terrain");
-  // Standalone SVGs can already contain fully exported relief. Avoid doubling it.
-  if(layer?.children.length)return {drawn:0,missing:0};
+  // Complete exported SVG artwork is preserved; indexed rendering uses saved relief data.
+  if(layer?.children.length)return empty;
   if(!layer){
     layer=document.createElementNS(NS,"g");layer.id="terrain";layer.setAttribute("stroke","#5c5c70");
-    const parent=svg.querySelector("#viewbox")||svg;parent.append(layer);
+    (svg.querySelector("#viewbox")||svg).append(layer);
   }
   let defs=svg.querySelector("defs");
   if(!defs){defs=document.createElementNS(NS,"defs");svg.prepend(defs);}
   layer.setAttribute("data-atlas-relief","true");layer.style.pointerEvents="none";
-  const symbols=new Map();let drawn=0,missing=0;
-  const fragment=document.createDocumentFragment();
-  for(const icon of data.relief.icons){
-    const key=reliefKey(icon,data.relief.set);if(!key){missing++;continue;}
-    let id=symbols.get(key);
-    if(!id){
-      id="atlas-relief-"+key.replace(/\//g,"-");
-      // Only bundled artwork is used; no external icon URL is requested.
-      const art=cleanSVG(reliefArtwork[key]);
-      const symbol=document.createElementNS(NS,"symbol");
-      for(const a of [...art.attributes])if(!["xmlns","width","height","version","id"].includes(a.name))symbol.setAttribute(a.name,a.value);
-      symbol.id=id;
-      while(art.firstChild)symbol.append(art.firstChild);
-      defs.append(symbol);symbols.set(key,id);
-    }
-    const use=document.createElementNS(NS,"use");
-    const size=icon.s*data.relief.size,shift=(size-icon.s)/2;
-    use.setAttribute("href","#"+id);use.setAttribute("x",icon.x-shift);use.setAttribute("y",icon.y-shift);
-    use.setAttribute("width",size);use.setAttribute("height",size);
-    fragment.append(use);drawn++;
+  const index=reliefTools.makeIndex(data.relief.icons,data.relief.size),symbols=new Map(),nodes=new Map();
+  function symbolFor(key){
+    if(symbols.has(key))return symbols.get(key);
+    const id="atlas-relief-"+key.replace(/\//g,"-");
+    const art=cleanSVG(reliefArtwork[key]),symbol=document.createElementNS(NS,"symbol");
+    for(const a of [...art.attributes])if(!["xmlns","width","height","version","id"].includes(a.name))symbol.setAttribute(a.name,a.value);
+    symbol.id=id;while(art.firstChild)symbol.append(art.firstChild);
+    defs.append(symbol);symbols.set(key,id);return id;
   }
-  layer.append(fragment);return {drawn,missing};
+  return {types:index.types,update(view,zoom,settings){
+    const visible=index.query(view,zoom,settings),wanted=new Set();let missing=0;
+    for(const item of visible){
+      const key=reliefKey(item.icon,data.relief.set);if(!key){missing++;continue;}
+      wanted.add(item.id);
+      if(!nodes.has(item.id)){
+        const use=document.createElementNS(NS,"use");use.setAttribute("href","#"+symbolFor(key));
+        use.setAttribute("x",item.left);use.setAttribute("y",item.top);
+        use.setAttribute("width",item.size);use.setAttribute("height",item.size);
+        nodes.set(item.id,use);
+      }
+    }
+    for(const [id,node] of nodes)if(!wanted.has(id)){node.remove();nodes.delete(id);}
+    let next=layer.firstChild;
+    for(const item of visible){
+      const node=nodes.get(item.id);if(!node)continue;
+      if(node===next)next=next.nextSibling;else layer.insertBefore(node,next);
+    }
+    return {drawn:nodes.size,missing};
+  }};
+}
+// Full-resolution helper used for artwork coverage checks; the viewer uses indexed updates.
+function restoreRelief(svg,data){
+  const renderer=createReliefRenderer(svg,data);
+  const settings=Object.fromEntries(renderer.types.map(type=>[type,0]));
+  return renderer.update([-1e9,-1e9,2e9,2e9],1,settings);
 }
 function cleanSVG(source, doc = document) {
   const parsed = new DOMParser().parseFromString(source, "image/svg+xml");
@@ -104,6 +119,8 @@ function mount(container, data, actions, previousState) {
     .stage{height:var(--atlas-height,600px);min-height:240px;position:relative;overflow:hidden;contain:layout paint;background:#1e2931;border-radius:8px;touch-action:none}
     .stage>svg{display:block;width:100%;height:100%;cursor:grab}.stage.adding>svg{cursor:crosshair}
     .settlement-toggle{display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap}
+    .terrain-settings{padding:8px;display:flex;flex-wrap:wrap;gap:8px}.terrain-settings[hidden]{display:none}
+    .terrain-settings label{display:flex;align-items:center;gap:5px}.terrain-settings input[type=number]{width:75px}.terrain-status{font-size:12px;opacity:.7;padding:0 8px 8px}
     .results{display:flex;flex-wrap:wrap;gap:5px;padding:0 8px}.results:empty{display:none}
     .detail{padding:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}.detail span{flex:1}
     .pin{cursor:pointer;fill:#d89c44;stroke:#fff;stroke-width:2;vector-effect:non-scaling-stroke}.pin.custom{fill:#51b5c0}.pin.linked{fill:#996ee5}.pin:focus{stroke:#ffdf87;stroke-width:4}
@@ -118,14 +135,63 @@ function mount(container, data, actions, previousState) {
   const button=(label,parent,fn)=>{const b=make("button",parent,label); b.type="button"; b.addEventListener("click",fn);return b;};
   const search=make("input",bar);search.placeholder="Find a settlement or pin…";search.setAttribute("aria-label","Search map locations");
   const results=make("div",shadow,"","results");
-  const stage=make("div",shadow,"","stage");const svg=cleanSVG(data.svg);restoreRelief(svg,data);stage.append(svg);
+  const stage=make("div",shadow,"","stage");const svg=cleanSVG(data.svg);stage.append(svg);
   const vb = svg.getAttribute("viewBox")?.trim().split(/[ ,]+/).map(Number);
   const width=parseFloat(svg.getAttribute("width")),height=parseFloat(svg.getAttribute("height"));
   const original=vb?.length===4 && vb.every(Number.isFinite) && vb[2]>0 && vb[3]>0 ? vb : [0,0,width,height];
   if(!original.every(Number.isFinite)||original[2]<=0||original[3]<=0)throw Error("SVG must have a valid viewBox or numeric width and height.");
   svg.removeAttribute("width");svg.removeAttribute("height");svg.setAttribute("preserveAspectRatio","xMidYMid meet");
   let view=previousState?.view?.length===4 ? [...previousState.view] : [...original],adding=false,selected=null,drag=null,drawing=null;
-  const paint=()=>svg.setAttribute("viewBox",view.join(" "));
+  const relief=createReliefRenderer(svg,data);
+  let reliefSettings={...data.viewSettings?.reliefMinZoom},frame=null,disposed=false;
+  const win=document.defaultView;
+  const terrainPanel=make("div",shadow,"","terrain-settings");terrainPanel.hidden=previousState?.terrainSettingsOpen!==true;
+  const terrainStatus=make("div",shadow,"","terrain-status");
+  function visibleBounds(){
+    try{
+      const rect=svg.getBoundingClientRect(),inverse=svg.getScreenCTM()?.inverse();
+      if(rect.width>0 && rect.height>0 && inverse){
+        const a=svg.createSVGPoint(),b=svg.createSVGPoint();
+        a.x=rect.left;a.y=rect.top;b.x=rect.right;b.y=rect.bottom;
+        const start=a.matrixTransform(inverse),end=b.matrixTransform(inverse);
+        return [start.x,start.y,end.x-start.x,end.y-start.y];
+      }
+    }catch{}
+    return view;
+  }
+  function renderTerrain(){
+    if(disposed)return;
+    const scale=original[2]/view[2],result=relief.update(visibleBounds(),scale,reliefSettings);
+    terrainStatus.textContent=relief.types.length ? `Zoom ${scale.toFixed(2)}× · ${result.drawn.toLocaleString()} terrain symbols` : "";
+  }
+  function scheduleTerrain(){
+    if(frame!==null||disposed)return;
+    if(win?.requestAnimationFrame)frame=win.requestAnimationFrame(()=>{frame=null;renderTerrain();});
+    else renderTerrain();
+  }
+  const paint=()=>{svg.setAttribute("viewBox",view.join(" "));scheduleTerrain();};
+  if(relief.types.length){
+    const control=button("Terrain detail",bar,()=>{terrainPanel.hidden=!terrainPanel.hidden;control.setAttribute("aria-expanded",String(!terrainPanel.hidden));});
+    control.setAttribute("aria-expanded",String(!terrainPanel.hidden));
+    make("span",terrainPanel,"Minimum zoom (Fit map = 1×; 0 = always):");
+    for(const type of relief.types){
+      const label=make("label",terrainPanel),enabled=make("input",label);enabled.type="checkbox";
+      make("span",label,reliefTools.labels[type]||type);
+      const input=make("input",label);input.type="number";input.min="0";input.max="100";input.step="0.25";
+      input.setAttribute("aria-label",(reliefTools.labels[type]||type)+" minimum zoom");
+      const min=reliefTools.threshold(type,reliefSettings);enabled.checked=min!==null;input.disabled=!enabled.checked;input.value=String(min??reliefTools.defaults[type]??3);
+      const save=()=>{
+        const value=Number(input.value);
+        if(!Number.isFinite(value)||value<0||value>100||input.value.trim()===""){input.value=String(reliefTools.threshold(type,reliefSettings)??reliefTools.defaults[type]??3);return;}
+        input.disabled=!enabled.checked;reliefSettings[type]=enabled.checked?value:null;
+        data.viewSettings={...data.viewSettings,reliefMinZoom:{...reliefSettings}};
+        renderTerrain();actions.setReliefZoom?.({...reliefSettings});
+      };
+      input.addEventListener("change",save);enabled.addEventListener("change",save);
+    }
+  }
+  const observer=win?.ResizeObserver ? new win.ResizeObserver(scheduleTerrain) : null;
+  observer?.observe(stage);
   const zoom=(factor,center=[view[0]+view[2]/2,view[1]+view[3]/2])=>{
     const next=view[2]*factor;if(next<original[2]/100||next>original[2]*4)return;
     view=[center[0]-(center[0]-view[0])*factor,center[1]-(center[1]-view[1])*factor,view[2]*factor,view[3]*factor];paint();
@@ -273,8 +339,9 @@ function mount(container, data, actions, previousState) {
     const p=points.find(point=>point.id===previousState.selectedId);if(p)select(p);
   }
   make("div",shadow,"Scroll to zoom · Drag to pan · Select a pin, then open or link its note. Purple pins have note links.","hint");
-  const dispose=()=>{shadow.replaceChildren();};
-  dispose.getState=()=>({view:[...view],selectedId:selected?.id});
+  renderTerrain();
+  const dispose=()=>{disposed=true;if(frame!==null)win?.cancelAnimationFrame?.(frame);observer?.disconnect();shadow.replaceChildren();};
+  dispose.getState=()=>({view:[...view],selectedId:selected?.id,terrainSettingsOpen:!terrainPanel.hidden});
   return dispose;
 }
-module.exports = {cleanSVG,mount,restoreRelief,reliefKey};
+module.exports = {cleanSVG,mount,restoreRelief,reliefKey,createReliefRenderer};

@@ -54,3 +54,11 @@ test("relief import keeps icon placement, set, size and saved visibility",()=>{
   assert.equal(parseMap(records.join("\r\n")).relief.enabled,false);
   d.relief.icons[0].s=-1;assert.throws(()=>validateAtlas(d),/relief/);
 });
+test('terrain thresholds survive validation and reject invalid values',()=>{
+  const d=parseMap(svg);d.viewSettings={reliefMinZoom:{mount:0,deciduous:3.25,swamp:null}};
+  assert.equal(validateAtlas(d).viewSettings.reliefMinZoom.deciduous,3.25);
+  for(const value of [-1,101,'3',NaN,[],null]){
+    d.viewSettings.reliefMinZoom=value===null||Array.isArray(value)?value:{mount:value};
+    assert.throws(()=>validateAtlas(d),/terrain zoom/);
+  }
+});

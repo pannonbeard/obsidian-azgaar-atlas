@@ -14,7 +14,9 @@ From this package, copy these three files into your Quartz repository's `quartz/
 
 Updating from 0.3.0: replace `azgaarAtlas.ts` and `azgaarAtlasCore.ts`, add `azgaarAtlas.runtime.ts`, and delete the old `azgaarAtlas.inline.ts`. Keep your existing `quartz.ts` registrations, then rebuild. Version 0.3.0 used a filename that triggered Quartz's special inline-script loader and produced a quoted script rather than executable viewer code.
 
-Updating from 0.3.1: replace all three companion files with the 0.4.0 copies. For previously imported maps, restore relief in Obsidian using the new command, sync the changed atlas data into Quartz content, and rebuild. The runtime contains the symbol artwork, so no separate artwork directory needs to be deployed.
+Updating from 0.3.1: replace all three companion files with the latest copies. For previously imported maps, restore relief in Obsidian using the new command, sync the changed atlas data into Quartz content, and rebuild. The runtime contains the symbol artwork, so no separate artwork directory needs to be deployed.
+
+Updating from 0.4.0: replace all three companion files with the 0.5.0 copies and rebuild. Existing relief data needs no reimport. The viewer now renders terrain by zoom threshold and viewport, using the preferences saved in Obsidian. **Terrain detail** also lets website visitors adjust thresholds for their current view without saving changes to your vault.
 
 Add this import to the existing `quartz.ts` at the repository root:
 

@@ -1,7 +1,7 @@
 {
   "id": "azgaar-atlas",
   "name": "Azgaar Atlas",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "minAppVersion": "1.5.0",
   "description": "Import Azgaar fantasy maps, explore layers and settlements, and connect map pins to your notes.",
   "author": "Phil Hendricks",

@@ -79,6 +79,12 @@ function validateAtlas(data) {
         throw Error("Invalid relief icon data.");
     }
   }
+  if(data.viewSettings?.reliefMinZoom!==undefined){
+    const settings=data.viewSettings.reliefMinZoom;
+    if(!settings || typeof settings!=="object" || Array.isArray(settings) ||
+      Object.values(settings).some(v=>v!==null && (!Number.isFinite(v)||v<0||v>100)))
+      throw Error("Invalid terrain zoom thresholds (use 0–100 or null to hide).");
+  }
   return data;
 }
 function safeName(name) {

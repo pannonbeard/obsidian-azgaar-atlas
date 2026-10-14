@@ -31,8 +31,11 @@ assert.deepEqual(requests,["https://example.org/garden/_atlas/test.json"]);
 const shadow=first.firstElementChild.shadowRoot;
 assert.equal(shadow.querySelector(".atlas-settlements").style.display,"none");
 assert.equal(shadow.querySelectorAll(".region-shape").length,1);
-assert.equal(shadow.querySelectorAll("#terrain use").length,2);
+assert.equal(shadow.querySelectorAll("#terrain use").length,1);
 assert.ok(shadow.querySelector("#atlas-relief-simple-mount-1"));
+const treeMinimum=shadow.querySelector('[aria-label="Deciduous trees minimum zoom"]');
+assert.equal(treeMinimum.value,"3");treeMinimum.value="0";treeMinimum.dispatchEvent(new window.Event("change"));
+assert.equal(shadow.querySelectorAll("#terrain use").length,2);
 for(const label of ["Add pin","Draw region","Create note","Link existing note"]){
   assert.ok(![...shadow.querySelectorAll(".bar button,.detail button")].some(b=>b.textContent===label));
 }

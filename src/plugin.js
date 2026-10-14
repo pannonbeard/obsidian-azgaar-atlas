@@ -54,6 +54,9 @@ class AtlasChild extends MarkdownRenderChild {
         setSettlements:handle(show=>change(d=>{
           d.viewSettings={...d.viewSettings,showSettlements:show};
         })),
+        setReliefZoom:handle(settings=>change(d=>{
+          d.viewSettings={...d.viewSettings,reliefMinZoom:settings};
+        })),
         saveRegion:(points,region)=>new PromptModal(p.app,region?"Edit region":"Name drawn region",[
           {key:"name",label:"Region name",value:region?.name||""},
           {key:"color",label:"Color (#RRGGBB)",value:region?.color||"#58a6c9"}
